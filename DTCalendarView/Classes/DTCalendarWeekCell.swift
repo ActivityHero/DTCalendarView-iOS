@@ -11,6 +11,8 @@ import UIKit
 protocol DTCalendarWeekCellDelegate: class {
     
     func calendarWeekCell(_ calendarWeekCell: DTCalendarWeekCell, didTapDate date: Date)
+    
+    func calendarWeekCell(_ calendarWeekCell: DTCalendarWeekCell, didTapAvailableDate date: Date)
 }
 
 class DTCalendarWeekCell: UICollectionViewCell {
@@ -40,6 +42,20 @@ class DTCalendarWeekCell: UICollectionViewCell {
     
     private var leadInSelectionView = UIView(frame: .zero)
     private var leadOutSelectionView = UIView(frame: .zero)
+    
+    // custom
+    var availableDays = [Int]()
+    var selectedDays = [Int]()
+    var pastDays = [Int]()
+    var weekDisplayAttributes: WeekDisplayAttributes?
+    
+    var allowSelection: Bool = true {
+        didSet {
+            for dayView in dayViews {
+                dayView.isUserInteractionEnabled = allowSelection
+            }
+        }
+    }
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -104,31 +120,43 @@ class DTCalendarWeekCell: UICollectionViewCell {
         for dayView in dayViews {
             contentView.addSubview(dayView)
             
-            dayView.isUserInteractionEnabled = true
+            dayView.isUserInteractionEnabled = allowSelection
             let tapGR = UITapGestureRecognizer(target: self, action: #selector(dayViewTapped(_:)))
             dayView.addGestureRecognizer(tapGR)
         }
     }
     
-    func dayViewTapped(_ tapGR: UITapGestureRecognizer) {
+    @objc func dayViewTapped(_ tapGR: UITapGestureRecognizer) {
         
         if let dayLabel = tapGR.view as? DTCalendarDayView,
             tapGR.state == .recognized {
             
             if (dayLabel.isPreview && previewDaysInPreviousAndMonth) || (!dayLabel.isPreview) {
-                delegate?.calendarWeekCell(self, didTapDate: dayLabel.representedDate)
+                if availableDays.count > 0 {
+                    let day = Calendar.current.component(.day, from: dayLabel.representedDate)
+                    if availableDays.contains(day) {
+                        dayLabel.isAvailableSelected = !dayLabel.isAvailableSelected
+                        dayLabel.updateView(weekDisplayAttributes: weekDisplayAttributes!)
+                        delegate?.calendarWeekCell(self, didTapAvailableDate: dayLabel.representedDate)
+                    } else {
+                        delegate?.calendarWeekCell(self, didTapDate: dayLabel.representedDate)
+                    }
+                    
+                } else {
+                    delegate?.calendarWeekCell(self, didTapDate: dayLabel.representedDate)
+                }
             }
         }
     }
     
     func updateCalendarLabels(weekDisplayAttributes: WeekDisplayAttributes) {
-        
+        self.weekDisplayAttributes = weekDisplayAttributes
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         
         backgroundColor = weekDisplayAttributes.normalDisplayAttributes.backgroundColor
-        leadInSelectionView.backgroundColor = weekDisplayAttributes.highlightedDisplayAttributes.backgroundColor
-        leadOutSelectionView.backgroundColor = weekDisplayAttributes.highlightedDisplayAttributes.backgroundColor
+//        leadInSelectionView.backgroundColor = weekDisplayAttributes.highlightedDisplayAttributes.backgroundColor
+//        leadOutSelectionView.backgroundColor = weekDisplayAttributes.highlightedDisplayAttributes.backgroundColor
         
         let calendar = Calendar.current
         var components = calendar.dateComponents([.year, .month, .day], from: displayMonth)
@@ -180,6 +208,19 @@ class DTCalendarWeekCell: UICollectionViewCell {
                             dayView.isDisabled = disabledDays.contains(currentDay)
                         } else {
                             dayView.isDisabled = false
+                        }
+                        // custom
+                        if availableDays.count > 0 {
+                            dayView.isAvailable = availableDays.contains(currentDay)
+                            dayView.isAvailableSelected = selectedDays.contains(currentDay)
+                        } else {
+                            dayView.isAvailable = false
+                        }
+                        
+                        if pastDays.count > 0 {
+                            dayView.isPast = pastDays.contains(currentDay)
+                        } else {
+                            dayView.isPast = false
                         }
                         
                         if let currentDate = calendar.date(bySetting: .day, value: currentDay, of: firstDayOfMonth) {

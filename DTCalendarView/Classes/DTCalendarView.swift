@@ -93,6 +93,16 @@ public protocol DTCalendarViewDelegate: class {
      
      */
     func calendarViewHeightForWeekdayLabelRow(_ calendarView: DTCalendarView) -> CGFloat
+    
+    
+    // custom
+    func calendarView(_ calendarView: DTCalendarView, availableDaysInMonth month: Date) -> [Int]?
+    
+    func calendarView(_ calendarView: DTCalendarView, selectedDaysInMonth month: Date) -> [Int]?
+    
+    func calendarView(_ calendarView: DTCalendarView, pastDaysInMonth month: Date) -> [Int]?
+    
+    func calendarView(_ calendarView: DTCalendarView, didSelectAvailableDate date: Date)
 }
 
 
@@ -103,6 +113,15 @@ public struct DisplayAttributes {
         self.font = font
         self.textColor = textColor
         self.backgroundColor = backgroundColor
+        self.textAlignment = textAlignment
+        self.borderColor = UIColor.clear
+    }
+    
+    public init(font: UIFont, textColor: UIColor, backgroundColor: UIColor, textAlignment: NSTextAlignment, borderColor: UIColor) {
+        self.font = font
+        self.textColor = textColor
+        self.backgroundColor = backgroundColor
+        self.borderColor = borderColor
         self.textAlignment = textAlignment
     }
     
@@ -117,6 +136,9 @@ public struct DisplayAttributes {
     
     /// The how to align the text - usually .center
     let textAlignment: NSTextAlignment
+    
+    // custome
+    let borderColor: UIColor
 }
 
 /// The day state of a particular day on the calendar
@@ -136,6 +158,10 @@ public enum DayState {
     
     /// A day from a previous or next month displayed in the current month view
     case preview
+    
+    // custom
+    case available
+    case past
 }
 
 struct WeekDisplayAttributes {
@@ -144,6 +170,9 @@ struct WeekDisplayAttributes {
     let highlightedDisplayAttributes: DisplayAttributes
     let disabledDisplayAttributes: DisplayAttributes
     let previewDisplayAttributes: DisplayAttributes
+    // custom
+    let availableDisplayAttributes: DisplayAttributes
+    let pastDisplayAttributes: DisplayAttributes
 }
 
 private enum PanMode {
@@ -155,6 +184,8 @@ private enum PanMode {
 
 /// A class for displaying a vertical scrolling calendar view. Supports selecting a range of dates and dragging those days around
 public class DTCalendarView: UIView {
+    
+    public var allowDateSelection = true
     
     /// The month/year the calendar should start at - defaults to current month/year. Other Date attributes are ignored (day, hour, etc)
     public var displayStartDate: Date {
@@ -246,7 +277,16 @@ public class DTCalendarView: UIView {
                                                               previewDisplayAttributes: DisplayAttributes(font: UIFont.systemFont(ofSize: 15),
                                                                                                           textColor: UIColor.black.withAlphaComponent(0.5),
                                                                                                           backgroundColor: .white,
-                                                                                                          textAlignment: .center))
+                                                                                                          textAlignment: .center),
+                                                              availableDisplayAttributes: DisplayAttributes(font: UIFont.systemFont(ofSize: 15),
+                                                                                                          textColor: UIColor.red,
+                                                                                                          backgroundColor: .white,
+                                                                                                          textAlignment: .center),
+                                                              pastDisplayAttributes: DisplayAttributes(font: UIFont.systemFont(ofSize: 15),
+                                                                                                        textColor: UIColor.red,
+                                                                                                        backgroundColor: .white,
+                                                                                                        textAlignment: .center)
+                                                              )
     
     /// This display attributes that will be applied to the weekday labels
     public var weekdayDisplayAttributes = DisplayAttributes(font: UIFont.boldSystemFont(ofSize: 15),
@@ -271,7 +311,7 @@ public class DTCalendarView: UIView {
     fileprivate var sectionAtStartOfScrolling: Int?
     
     /// Internal representation of the calendar start date the user set - pins to first day of month for calculations
-    private var _startDate: Date = {
+    public var _startDate: Date = {
         let calendar = Calendar.current
         let date = Date()
         var components = calendar.dateComponents([.year, .month, .day], from: date)
@@ -363,6 +403,8 @@ public class DTCalendarView: UIView {
         var highlightedDisplayAttributes = weekDisplayAttributes.highlightedDisplayAttributes
         var disabledDisplayAttributes = weekDisplayAttributes.disabledDisplayAttributes
         var previewDisplayAttributes = weekDisplayAttributes.previewDisplayAttributes
+        var availableDisplayAttributes = weekDisplayAttributes.availableDisplayAttributes
+        var pastDisplayAttributes = weekDisplayAttributes.pastDisplayAttributes
         
         switch state {
         case .normal:
@@ -376,13 +418,20 @@ public class DTCalendarView: UIView {
             disabledDisplayAttributes = displayAttributes
         case .preview:
             previewDisplayAttributes = displayAttributes
+        case .available:
+            availableDisplayAttributes = displayAttributes
+        case .past:
+            pastDisplayAttributes = displayAttributes
         }
         
         weekDisplayAttributes = WeekDisplayAttributes(normalDisplayAttributes: normalDisplayAttributes,
                                                       selectedDisplayAttributes: selectedDisplayAttributes,
                                                       highlightedDisplayAttributes: highlightedDisplayAttributes,
                                                       disabledDisplayAttributes: disabledDisplayAttributes,
-                                                      previewDisplayAttributes: previewDisplayAttributes)
+                                                      previewDisplayAttributes: previewDisplayAttributes,
+                                                      availableDisplayAttributes: availableDisplayAttributes,
+                                                      pastDisplayAttributes: pastDisplayAttributes
+                                )
         
         setNeedsUpdate()
     }
@@ -446,7 +495,7 @@ public class DTCalendarView: UIView {
         collectionView.register(DTWeekdayViewCell.self, forCellWithReuseIdentifier: "WeekDayViewCell")
         collectionView.register(DTCalendarWeekCell.self, forCellWithReuseIdentifier: "WeekViewCell")
         
-        collectionView.decelerationRate = UIScrollViewDecelerationRateFast
+        collectionView.decelerationRate = UIScrollView.DecelerationRate.fast
         collectionView.dataSource = self
         collectionView.delegate = self
         
@@ -455,7 +504,7 @@ public class DTCalendarView: UIView {
         collectionView.addGestureRecognizer(datePanGR!)
     }
     
-    func viewPanned(_ panGR: UIPanGestureRecognizer) {
+    @objc func viewPanned(_ panGR: UIPanGestureRecognizer) {
         
         let point = panGR.location(in: collectionView)
         
@@ -610,6 +659,7 @@ extension DTCalendarView: UICollectionViewDataSource {
                 let weekViewCell = cell as? DTCalendarWeekCell,
                 var weekday = calendar.dateComponents([.weekday], from: date).weekday {
                 
+                weekViewCell.allowSelection = allowDateSelection
                 if mondayShouldBeTheFirstDayOfTheWeek {
                     weekday = ((weekday + 5) % 7) + 1
                 }
@@ -639,7 +689,10 @@ extension DTCalendarView: UICollectionViewDataSource {
                 weekViewCell.mondayShouldBeTheFirstDayOfTheWeek = mondayShouldBeTheFirstDayOfTheWeek
                 
                 weekViewCell.disabledDays = delegate?.calendarView(self, disabledDaysInMonth: date)
-                
+                // custom
+                weekViewCell.availableDays = (delegate?.calendarView(self, availableDaysInMonth: date))!
+                weekViewCell.selectedDays = (delegate?.calendarView(self, selectedDaysInMonth: date))!
+                weekViewCell.pastDays = (delegate?.calendarView(self, pastDaysInMonth: date))!
                 weekViewCell.updateCalendarLabels(weekDisplayAttributes: weekDisplayAttributes)
             }
             
@@ -764,5 +817,9 @@ extension DTCalendarView: DTCalendarWeekCellDelegate {
     
     func calendarWeekCell(_ calendarWeekCell: DTCalendarWeekCell, didTapDate date: Date) {
         delegate?.calendarView(self, didSelectDate: date)
+    }
+    
+    func calendarWeekCell(_ calendarWeekCell: DTCalendarWeekCell, didTapAvailableDate date: Date) {
+        delegate?.calendarView(self, didSelectAvailableDate: date)
     }
 }

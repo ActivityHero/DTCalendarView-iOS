@@ -40,7 +40,15 @@ class DTCalendarDayView: UIView {
     
     private var selectedLayer = CAShapeLayer()
     
+    private var pastLayer = CAShapeLayer()
+    
     private var highLightLayer = CAShapeLayer()
+    
+    // custom
+    var isAvailable = false
+    var isAvailableSelected = false
+    var isPast = false
+    private var availableLayer = CAShapeLayer()
     
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -58,14 +66,16 @@ class DTCalendarDayView: UIView {
         
         layer.addSublayer(highLightLayer)
         layer.addSublayer(selectedLayer)
+        layer.addSublayer(pastLayer)
+        layer.addSublayer(availableLayer)
         
         addSubview(dayLabel)
     }
     
     override func layoutSubviews() {
         
-        let width = bounds.width
-        let height = bounds.height
+        let width = bounds.width - 5
+        let height = bounds.height - 5
         
         dayLabel.frame = CGRect(x: 0, y: 0, width: width, height: height)
         
@@ -73,6 +83,12 @@ class DTCalendarDayView: UIView {
         
         let insetFrame = selectedLayer.frame.insetBy(dx: width > height ? (width - height) / 2 : 0, dy: height > width ? (height - width) / 2 : 0)
         selectedLayer.path = CGPath(ellipseIn: insetFrame, transform: nil)
+        
+        availableLayer.frame = CGRect(x: 0, y:0, width:width, height: height)
+        availableLayer.path = CGPath(ellipseIn: insetFrame, transform: nil)
+
+        pastLayer.frame = CGRect(x: 0, y:0, width:width, height: height)
+        pastLayer.path = CGPath(ellipseIn: insetFrame, transform: nil)
         
         let hightLightFrame = dayLabel.frame.insetBy(dx: 0, dy: height > width ? (height - width) / 2 : 0)
         highLightLayer.frame = hightLightFrame
@@ -99,16 +115,55 @@ class DTCalendarDayView: UIView {
     func updateView(weekDisplayAttributes: WeekDisplayAttributes) {
         
         backgroundColor = weekDisplayAttributes.normalDisplayAttributes.backgroundColor
+        availableLayer.isHidden = true
+        pastLayer.isHidden = true
         
         if isPreview && !previewDaysInPreviousAndMonth {
             dayLabel.isHidden = true
             selectedLayer.isHidden = true
             highLightLayer.isHidden = true
+            pastLayer.isHidden = true
             return
         }
         
         dayLabel.text = "\(dayOfMonth)"
         dayLabel.isHidden = false
+        
+        if isPast {
+            pastLayer.isHidden = false
+            highLightLayer.isHidden = true
+            dayLabel.font = weekDisplayAttributes.pastDisplayAttributes.font
+            dayLabel.textColor = weekDisplayAttributes.pastDisplayAttributes.textColor
+            dayLabel.textAlignment = weekDisplayAttributes.pastDisplayAttributes.textAlignment
+            pastLayer.fillColor = weekDisplayAttributes.pastDisplayAttributes.backgroundColor.cgColor
+//            highLightLayer.fillColor = weekDisplayAttributes.pastDisplayAttributes.backgroundColor.cgColor
+//            highLightLayer.path =  CGPath(rect: CGRect(x: highLightLayer.bounds.midX, y: 0, width: highLightLayer.bounds.width / 2, height: highLightLayer.bounds.height), transform: nil)
+            return
+        }
+        
+        // custom
+        if  isAvailable {
+            if isAvailableSelected {
+                selectedLayer.isHidden = false
+                highLightLayer.isHidden = false
+                dayLabel.font = weekDisplayAttributes.selectedDisplayAttributes.font
+                dayLabel.textColor = weekDisplayAttributes.selectedDisplayAttributes.textColor
+                dayLabel.textAlignment = weekDisplayAttributes.selectedDisplayAttributes.textAlignment
+                selectedLayer.fillColor = weekDisplayAttributes.selectedDisplayAttributes.backgroundColor.cgColor
+                highLightLayer.fillColor = weekDisplayAttributes.highlightedDisplayAttributes.backgroundColor.cgColor
+                highLightLayer.path =  CGPath(rect: CGRect(x: highLightLayer.bounds.midX, y: 0, width: highLightLayer.bounds.width / 2, height: highLightLayer.bounds.height), transform: nil)
+            } else {
+                availableLayer.isHidden = false
+                availableLayer.strokeColor = weekDisplayAttributes.availableDisplayAttributes.borderColor.cgColor
+                availableLayer.fillColor = weekDisplayAttributes.availableDisplayAttributes.backgroundColor.cgColor
+                
+                dayLabel.font = weekDisplayAttributes.availableDisplayAttributes.font
+                dayLabel.textColor = weekDisplayAttributes.availableDisplayAttributes.textColor
+                dayLabel.textAlignment = weekDisplayAttributes.availableDisplayAttributes.textAlignment
+                backgroundColor = weekDisplayAttributes.availableDisplayAttributes.backgroundColor
+            }
+            return
+        }
         
         switch rangeSelection {
         case .startSelection:
